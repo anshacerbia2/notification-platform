@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-003
   title: Notification Control API and Configuration Model
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Notification Control API and Configuration Model
 
@@ -107,13 +107,13 @@ API limits:
 
 ## Security Notes
 
-Credential registration is a write-only privileged path. Request bodies containing secrets are never logged, traced, cached, queued, or replayed by the Experience. Runtime immediately writes/rotates the secret through the secret boundary and persists only `secret_ref`.
+Credential registration is a write-only privileged path. Request bodies containing secrets are never logged, traced, cached, queued, or replayed by the Experience. Each credential write carries a stable server-generated `credential_operation_id`. Runtime sends it to the secret boundary, which treats equivalent retries as the same logical write/rotation result. Runtime persists only `secret_ref`, secret metadata/version, and `credential_operation_id`.
 
 Template preview is treated as untrusted content; Experience sandbox rules are in TDD-notif-experience-001.
 
 ## Failure Handling
 
-Configuration writes are atomic locally. Secret write followed by local metadata failure is reconciled by secret-reference idempotency/rotation workflow and never exposes the value. Test-send cannot bypass normal provider authorization, suppression, rate limiting, or audit.
+Configuration writes are atomic locally. Secret write followed by local metadata failure is reconciled by `credential_operation_id`: Runtime retries/queries the same secret operation and repairs only missing local reference metadata. It never creates an unrelated second credential version because a local commit/result was lost. Test-send cannot bypass normal provider authorization, suppression, rate limiting, or audit.
 
 ## Observability
 

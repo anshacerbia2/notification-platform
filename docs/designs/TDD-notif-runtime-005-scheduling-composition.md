@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-005
   title: Notification and Scheduling Composition
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Notification and Scheduling Composition
 
@@ -65,6 +65,20 @@ Idempotency key format is stable logical identity `notif-schedule:<notification_
 
 `notification_schedule_occurrence_inbox` has unique `occurrence_id`, `schedule_id`, `notification_id`, receive/applied timestamps.
 
+### Scheduling Binding State Machine
+
+| Current | Event | Next |
+| --- | --- | --- |
+| none | Frozen Notification accepted | `PENDING` |
+| `PENDING` | create/recovery succeeds | `BOUND` |
+| `PENDING` | transient/ambiguous Scheduling result | `PENDING` with retry metadata |
+| `BOUND` | Notification cancelled | `CANCEL_PENDING` |
+| `CANCEL_PENDING` | cancel succeeds/Schedule terminal | `CANCELLED` |
+| `CANCEL_PENDING` | stale Schedule version | remain, refresh owned version, retry |
+| any non-terminal | unrecoverable ownership/contract mismatch | `ERROR` |
+
+`ERROR` never creates a replacement Schedule with a new registration generation unless a new business intent explicitly requires it.
+
 ## API / Interface
 
 Frozen registration sends a one-time Schedule request containing:
@@ -104,6 +118,10 @@ Cancellation:
 3. worker attempts Scheduler cancel asynchronously with the last bound `schedule_version`
 4. on `412` stale version, worker reads the owned Schedule, confirms it is still cancellable, updates the bound version, and retries
 5. late/duplicate Occurrence remains a no-op against cancelled Notification
+
+### Lock and Acknowledgement Contract
+
+Occurrence consumption locks inbox identity before Notification, commits inbox plus activation before broker acknowledgement, and deduplicates on the same `occurrence_id`. Scheduling API calls and broker acknowledgements occur outside Notification DB row locks. No cross-platform call participates in a Notification transaction.
 
 ## Configuration
 

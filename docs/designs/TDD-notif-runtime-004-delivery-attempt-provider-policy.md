@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-004
   title: Delivery Attempt and Provider Outcome Policy
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Delivery Attempt and Provider Outcome Policy
 
@@ -76,6 +76,22 @@ type ProviderAdapter interface {
 ```
 
 Unsupported capability methods return a typed `CapabilityUnsupported`, not fabricated success.
+
+### Provider Safety Classification
+
+Unknown provider capabilities default conservatively to no idempotency, no reconciliation, no retraction, and no final-receipt claim.
+
+| Observation | Capability | Decision |
+| --- | --- | --- |
+| explicit local/pre-send failure | any | bounded retry |
+| permanent rejection proving no effect | any | permanent failure |
+| timeout after request may have left process | stable idempotency | retry same stable identity or reconcile |
+| timeout after request may have left process | no idempotency, lookup exists | `UNKNOWN`, reconcile |
+| timeout after request may have left process | no idempotency, no lookup | `UNKNOWN`, park for evidence-based resolution |
+| prior effect proven absent | any | new attempt allowed within budget |
+| prior effect present/probable | any | no failover/new attempt |
+
+Failover is allowed only after the prior provider effect is proven absent.
 
 ## Algorithms / Logic
 

@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-006
   title: Notification Messaging Outbox and Lifecycle Contracts
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Notification Messaging Outbox and Lifecycle Contracts
 
@@ -38,7 +38,7 @@ Broker SDK types stay in adapters.
 
 ## Data Model
 
-Outbox state is `PENDING`, `IN_FLIGHT`, `ACCEPTED` with bounded lease/backoff. Lifecycle CloudEvent families:
+Outbox state is `PENDING`, `IN_FLIGHT`, `ACCEPTED`, or `PARKED` with bounded lease/backoff. `PARKED` is durable operator-attention state excluded from normal relay claims. Lifecycle CloudEvent families:
 
 - `com.scnehaux.notification.accepted.v1`
 - `com.scnehaux.notification.cancelled.v1`
@@ -85,7 +85,7 @@ Events minimize PII and never contain secrets. Broker credentials are secret ref
 
 ## Failure Handling
 
-Messaging outage leaves committed outbox rows pending. Unroutable/poison events park and alert without blocking unrelated lifecycle events. Ambiguous direct acceptance is reconciled before blind retry unless target contract guarantees idempotency.
+Messaging outage leaves committed outbox rows pending. Unroutable/poison/permanent-contract events transition to `PARKED` with a stable reason code and alert without blocking unrelated lifecycle events. Redrive requires privileged reason/evidence and creates a new publication intent linked to the parked row rather than deleting history. Ambiguous direct acceptance is reconciled before blind retry unless target contract guarantees idempotency.
 
 ## Observability
 

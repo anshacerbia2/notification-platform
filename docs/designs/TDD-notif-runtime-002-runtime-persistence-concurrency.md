@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-002
   title: Notification Runtime Persistence and Concurrency
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Notification Runtime Persistence and Concurrency
 
@@ -44,14 +44,16 @@ The transaction that marks an attempt `STARTED` is the cancellation/attempt line
 Core tables include:
 
 - `notifications(notification_id, owner scope, lifecycle_state, communication_class, snapshot_hash, scheduled_at, created_at, cancelled_at)` where `cancelled_at` is the authoritative gate for not-started delivery
-- `recipient_snapshots(snapshot_id, notification_id, endpoint_ciphertext_or_protected_value, endpoint_hash, bounded_metadata, immutable_hash)`
+- `recipient_snapshots(snapshot_id, notification_id, endpoint_ciphertext, endpoint_hash, encryption_key_ref, encryption_algorithm_version, nonce_or_iv, bounded_metadata, immutable_hash)`; plaintext endpoint is never persisted
 - `deliveries(delivery_id, notification_id, channel, state, ready_at, attempt_no, lease_until, terminal_at)`
 - `delivery_attempts(attempt_id, delivery_id, attempt_no, state, provider_binding_id, routing_version, endpoint_identity, secret_ref_version, stable_delivery_identity, send_started_at, normalized_outcome, provider_message_id, evidence timestamps)`
-- `notification_idempotency(application_id, tenant_scope, key, semantic_fingerprint, notification_id)`
-- `notification_outbox(outbox_id, aggregate_id, event_type, payload, state, attempt_count, available_at, lease_until)`
+- `notification_idempotency(application_id, tenant_scope, idempotency_key, semantic_fingerprint, notification_id)`
+- `notification_outbox(outbox_id, aggregate_id, event_type, payload, state, attempt_count, available_at, lease_until, accepted_at, parked_at, park_reason)` where state is `PENDING`, `IN_FLIGHT`, `ACCEPTED`, or `PARKED`
 - `provider_callback_inbox(provider_binding_id, provider_event_key, payload_hash, received_at, applied_at)`
 - configuration/template tables defined contractually in TDD-003
 - Scheduling registration/inbox tables defined in TDD-005
+
+Recipient endpoint protection uses versioned authenticated encryption through the governed enterprise key-management boundary. Runtime stores ciphertext plus key reference/algorithm metadata, never key material or plaintext. `delivery_attempts.state` is constrained to `PREPARED`, `STARTED`, `PROVIDER_ACCEPTED`, `UNKNOWN`, `FAILED_PERMANENT`, and `DELIVERED`; attempts remain immutable evidence.
 
 Critical constraints:
 
@@ -86,6 +88,10 @@ Attempt start transaction:
 9. perform external I/O
 
 A crash after step 8 is treated conservatively as potentially ambiguous because the process boundary cannot prove whether the external call began. TDD-004 decides safe retry/reconciliation from provider capability.
+
+### Lock Order and Migration Contract
+
+Attempt start locks Delivery before creating/finalizing Attempt. Callback application locks callback-inbox identity then the matching Delivery. Network/provider calls never occur under DB row locks. Schema evolution uses expand/backfill/verify/contract rolling migrations; published snapshots and attempt history are never rewritten merely to fit a new schema.
 
 ## Configuration
 

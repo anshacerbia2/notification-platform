@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-001
   title: Notification Lifecycle and Frozen Snapshot
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Notification Lifecycle and Frozen Snapshot
 
@@ -42,6 +42,24 @@ Notification lifecycle states are `ACCEPTED`, `SCHEDULE_PENDING`, `SCHEDULED`, `
 Delivery states: `PLANNED`, `READY`, `ATTEMPTING`, `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, `UNKNOWN`, `SUPPRESSED`, `CANCELLED`.
 
 Terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `SUPPRESSED`, and `CANCELLED`. `UNKNOWN` is non-terminal but blocks blind retry/failover. Cancellation changes only not-started Deliveries to `CANCELLED`; an already-started Delivery retains its real external outcome and may later become `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, or remain `UNKNOWN`.
+
+### Authoritative State Transition Contract
+
+| Current Delivery | Event | Next | Guard |
+| --- | --- | --- | --- |
+| `PLANNED` | activation | `READY` | Notification not cancelled |
+| `READY` | suppression | `SUPPRESSED` | before attempt start |
+| `READY` | cancellation | `CANCELLED` | no attempt `STARTED` |
+| `READY` | attempt-start commit | `ATTEMPTING` | cancellation/suppression rechecked under row lock |
+| `ATTEMPTING` | provider acceptance proven | `PROVIDER_ACCEPTED` | matching attempt |
+| `ATTEMPTING` | external effect ambiguous | `UNKNOWN` | presence/absence not provable |
+| `ATTEMPTING` | permanent no-delivery proven | `FAILED_PERMANENT` | matching attempt |
+| `PROVIDER_ACCEPTED` | final receipt | `DELIVERED` | monotonic evidence |
+| `UNKNOWN` | effect absent proven | `READY` | retry policy permits |
+| any started state | Notification cancelled | unchanged | blocks future attempts only |
+| terminal | weaker/duplicate evidence | unchanged | monotonicity |
+
+No adapter, API, or UI owns a competing state machine.
 
 ## Data Model
 

@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-experience-001
   title: Notification Experience Browser and BFF Security Boundary
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-015
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Notification Experience Browser and BFF Security Boundary
 
@@ -45,6 +45,10 @@ Opaque cookie `__Host-scnehaux_notif_session` is Secure, HttpOnly, Path=/, no Do
 Server session contains opaque ID, Principal, assurance, current application/Tenant context, context generation, delegated token material/handle, expiry, and CSRF secret hash.
 
 Secret-entry request bodies are never persisted in session state, retry queues, analytics, or request-body logs.
+
+### Production Session Store Contract
+
+Production sessions are server-side and shared across BFF replicas; process-local memory is development-only. The store provides atomic create, read-and-touch, rotate, revoke/delete, idle expiry, and absolute expiry. BFF process loss must not terminate unaffected sessions. Logout/revocation/context invalidation propagates to all replicas within 5 seconds. Delegated token material or token handles are protected at rest. The session store is not Notification authorization authority.
 
 ## API / Interface
 
