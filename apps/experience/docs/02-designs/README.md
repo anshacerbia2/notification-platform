@@ -1,5 +1,8 @@
 # Notification Experience Technical Design Documents
 
-This directory contains TDDs whose `parent_sad` is the SAD governing this System/deployable.
+Parent SAD: `SAD-015`
 
-Designs from other Systems in the repository must not be placed here.
+- `TDD-notif-experience-001-browser-bff-security-boundary.md`
+- `TDD-notif-experience-002-notification-operations-ui.md`
+
+Only designs owned by Notification Experience belong in this directory.
