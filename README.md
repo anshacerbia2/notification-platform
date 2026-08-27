@@ -8,18 +8,16 @@ A reusable platform repository containing independently deployable Runtime and E
 notification-platform/
 ├─ apps/
 │  ├─ runtime/                  # SAD-005
-│  │  └─ docs/
-│  │     └─ 02-designs/
 │  └─ experience/               # SAD-015
 │     ├─ server/
-│     ├─ web/
-│     └─ docs/
-│        └─ 02-designs/
+│     └─ web/
 ├─ packages/
 │  └─ contracts/                # governed published contracts / generated clients when justified
-└─ deploy/
-   ├─ runtime/                   # deployable-owned delivery manifests/configuration
-   └─ experience/
+├─ deploy/
+│  ├─ runtime/                   # deployable-owned delivery manifests/configuration
+│  └─ experience/
+└─ docs/
+   └─ designs/                   # TDD-notif-runtime-* and TDD-notif-experience-*
 ```
 
 ## Architectural Boundaries
@@ -33,6 +31,7 @@ notification-platform/
 - Runtime and Experience build, version, release, deploy, scale, and roll back independently
 - Repository co-location is a collaboration boundary, not an authority boundary
 - No deployable may import another deployable's internal packages
+- Both deployables' designs live in `docs/designs`; the document identifier states which system owns each, and the governance crawler scans only that path
 
 ## Architecture Lineage
 
