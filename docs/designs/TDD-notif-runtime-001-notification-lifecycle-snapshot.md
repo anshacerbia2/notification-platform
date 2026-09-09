@@ -41,7 +41,7 @@ Notification lifecycle states are `ACCEPTED`, `SCHEDULE_PENDING`, `SCHEDULED`, `
 
 Delivery states: `PLANNED`, `READY`, `ATTEMPTING`, `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, `UNKNOWN`, `PARKED`, `SUPPRESSED`, `CANCELLED`.
 
-Terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `PARKED`, `SUPPRESSED`, and `CANCELLED`. `UNKNOWN` is non-terminal but blocks blind retry/failover until reconciliation proves a safe transition. Cancellation changes only not-started Deliveries to `CANCELLED`; an already-started Delivery retains its real external outcome and may later become `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, or remain `UNKNOWN`.
+Semantic terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `SUPPRESSED`, and `CANCELLED`. `PARKED` is terminal for automatic processing only: no worker may retry or fail over it, but a governed evidence-based operator/policy resolution may move it to a proven state or reopen it for a safe retry. `UNKNOWN` blocks blind retry/failover until reconciliation proves a safe transition. Cancellation changes only not-started Deliveries to `CANCELLED`; an already-started Delivery retains its real external outcome and may later become `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, or remain `UNKNOWN`.
 
 ### Authoritative State Transition Contract
 
@@ -57,6 +57,8 @@ Terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `PARKED`, `SUPPRES
 | `PROVIDER_ACCEPTED` | final receipt | `DELIVERED` | monotonic evidence |
 | `UNKNOWN` | effect absent proven | `READY` | retry policy permits |
 | `UNKNOWN` | no safe automatic resolution | `PARKED` | evidence retained; operator/policy resolution required |
+| `PARKED` | governed effect-absence proof | `READY` | explicit resolution evidence; retry budget permits |
+| `PARKED` | governed provider evidence | proven normalized state | only evidence-supported `PROVIDER_ACCEPTED`, `DELIVERED`, or `FAILED_PERMANENT` |
 | any started state | Notification cancelled | unchanged | blocks future attempts only |
 | terminal | weaker/duplicate evidence | unchanged | monotonicity |
 
@@ -80,6 +82,10 @@ stateDiagram-v2
     UNKNOWN --> DELIVERED: reconciliation proves delivery
     UNKNOWN --> FAILED_PERMANENT: reconciliation proves terminal no-delivery
     UNKNOWN --> PARKED: cannot safely resolve automatically
+    PARKED --> READY: governed resolution proves effect absent and retry safe
+    PARKED --> PROVIDER_ACCEPTED: governed evidence proves acceptance
+    PARKED --> DELIVERED: governed evidence proves delivery
+    PARKED --> FAILED_PERMANENT: governed evidence proves terminal no-delivery
 ```
 
 ## Data Model
@@ -176,7 +182,7 @@ Tests cover duplicate acceptance, conflicting idempotency, immutable snapshot en
 
 ## Operational Notes
 
-Operators can distinguish accepted, scheduled, active, provider-accepted, delivered, failed, unknown, parked, suppressed, and cancelled states. Historical snapshots and Delivery evidence are immutable.
+Operators can distinguish accepted, scheduled, active, provider-accepted, delivered, failed, unknown, parked, suppressed, and cancelled states. Parked resolution is privileged/evidenced and never equivalent to manually fabricating delivery success. Historical snapshots and Delivery evidence are immutable.
 
 ## Traceability
 
