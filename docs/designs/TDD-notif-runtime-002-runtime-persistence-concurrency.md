@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-002
   title: Notification Runtime Persistence and Concurrency
   owner: Notification Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Notification Runtime Persistence and Concurrency
 
@@ -49,9 +49,11 @@ Core tables include:
 - `delivery_attempts(attempt_id, delivery_id, attempt_no, state, provider_binding_id, routing_version, endpoint_identity, secret_ref_version, stable_delivery_identity, send_started_at, normalized_outcome, provider_message_id, evidence timestamps)`
 - `notification_idempotency(application_id, tenant_scope, idempotency_key, semantic_fingerprint, notification_id)`
 - `notification_outbox(outbox_id, aggregate_id, event_type, payload, state, attempt_count, available_at, lease_until, accepted_at, parked_at, park_reason)` where state is `PENDING`, `IN_FLIGHT`, `ACCEPTED`, or `PARKED`
-- `provider_callback_inbox(provider_binding_id, provider_event_key, payload_hash, received_at, applied_at)`
+- `provider_callback_inbox(provider_binding_id, provider_event_key, payload_hash, provider_event_at, provider_sequence, provider_version, received_at, applied_at, apply_outcome, reconciliation_required)`
 - configuration/template tables defined contractually in TDD-003
 - Scheduling registration/inbox tables defined in TDD-005
+
+Delivery state includes `PARKED` for ambiguity that cannot be safely resolved automatically. Provider callback ordering evidence is stored independently from local receipt time so callback arrival order cannot become state authority.
 
 Recipient endpoint protection uses versioned authenticated encryption through the governed enterprise key-management boundary. Runtime stores ciphertext plus key reference/algorithm metadata, never key material or plaintext. `delivery_attempts.state` is constrained to `PREPARED`, `STARTED`, `PROVIDER_ACCEPTED`, `UNKNOWN`, `FAILED_PERMANENT`, and `DELIVERED`; attempts remain immutable evidence.
 
@@ -63,7 +65,7 @@ UNIQUE (delivery_id, attempt_no)
 UNIQUE (provider_binding_id, provider_event_key)
 ```
 
-Indexes cover `(state, ready_at)` for ready Deliveries and outbox `(state, available_at)`.
+Indexes cover `(state, ready_at)` for ready Deliveries, outbox `(state, available_at)`, callback deduplication by provider event identity, and provider message/order lookup needed for reconciliation.
 
 ## API / Interface
 
@@ -91,7 +93,7 @@ A crash after step 8 is treated conservatively as potentially ambiguous because 
 
 ### Lock Order and Migration Contract
 
-Attempt start locks Delivery before creating/finalizing Attempt. Callback application locks callback-inbox identity then the matching Delivery. Network/provider calls never occur under DB row locks. Schema evolution uses expand/backfill/verify/contract rolling migrations; published snapshots and attempt history are never rewritten merely to fit a new schema.
+Attempt start locks Delivery before creating/finalizing Attempt. Callback application locks callback-inbox identity then the matching Delivery. It persists provider event time plus provider sequence/version when available before deciding whether the normalized transition is current, stale, duplicate, or contradictory. Network/provider calls never occur under DB row locks. Schema evolution uses expand/backfill/verify/contract rolling migrations; published snapshots and attempt history are never rewritten merely to fit a new schema.
 
 ## Configuration
 
@@ -127,7 +129,7 @@ No external I/O is held under row locks. Partial indexes keep ready/outbox scans
 
 ## Testing Strategy
 
-Production-equivalent PostgreSQL tests cover concurrent workers, cancel-vs-start race, process kill at every boundary, lease recovery, RLS isolation, unique callback/idempotency constraints, outbox atomicity, provider-outage backlog, and 10x forecast acceptance/worker load.
+Production-equivalent PostgreSQL tests cover concurrent workers, cancel-vs-start race, process kill at every boundary, lease recovery, RLS isolation, unique callback/idempotency constraints, out-of-order and contradictory callback evidence, parked ambiguity, outbox atomicity, provider-outage backlog, and 10x forecast acceptance/worker load.
 
 ## Operational Notes
 
@@ -135,4 +137,4 @@ Retention/vacuum/index health and ready/outbox backlog are monitored. Direct SQL
 
 ## Traceability
 
-Implements SAD-005 State & Data Architecture and Channel Dispatch Worker concurrency. Conforms to PAD-PLT-005 RPO/cancellation/attempt evidence rules. Provider ambiguity policy is TDD-004.
+Implements SAD-005 v2.2 State & Data Architecture and Channel Dispatch Worker concurrency. Conforms to PAD-PLT-005 RPO/cancellation/attempt evidence rules. Provider ambiguity policy is TDD-004.

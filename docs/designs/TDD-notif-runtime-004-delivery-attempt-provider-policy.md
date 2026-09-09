@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-004
   title: Delivery Attempt and Provider Outcome Policy
   owner: Notification Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Delivery Attempt and Provider Outcome Policy
 
@@ -51,6 +51,8 @@ Capability record per provider/channel binding:
 | callback | `NONE`, `AUTHENTICATED` |
 | final_receipt | boolean |
 | retraction | `NONE`, `SUPPORTED` |
+| ordering | `NONE`, `EVENT_TIME`, `SEQUENCE`, `VERSION` |
+| failover_safety | `ABSENCE_REQUIRED`, `DUPLICATE_SAFE_EQUIVALENT` |
 | retry_after | boolean |
 
 Each Attempt freezes:
@@ -79,7 +81,7 @@ Unsupported capability methods return a typed `CapabilityUnsupported`, not fabri
 
 ### Provider Safety Classification
 
-Unknown provider capabilities default conservatively to no idempotency, no reconciliation, no retraction, and no final-receipt claim.
+Unknown provider capabilities default conservatively to no idempotency, no reconciliation, no retraction, no ordering guarantee, `ABSENCE_REQUIRED` failover, and no final-receipt claim.
 
 | Observation | Capability | Decision |
 | --- | --- | --- |
@@ -91,13 +93,14 @@ Unknown provider capabilities default conservatively to no idempotency, no recon
 | prior effect proven absent | any | new attempt allowed within budget |
 | prior effect present/probable | any | no failover/new attempt |
 
-Failover is allowed only after the prior provider effect is proven absent.
+Failover is allowed only after the prior provider effect is proven absent unless the provider/channel contract explicitly proves semantically equivalent cross-provider duplicate safety. `DUPLICATE_SAFE_EQUIVALENT` is exceptional and requires contract tests; it is never inferred from two providers accepting idempotency keys.
 
 ## Algorithms / Logic
 
 Routing selects an enabled binding by deterministic policy/version and current health before attempt start.
 
 Outcome normalization:
+- provider ordering/version metadata is preserved as evidence and consumed by callback/reconciliation policy; arrival order never becomes authority
 - known accepted -> `PROVIDER_ACCEPTED`
 - proven final delivery -> `DELIVERED`
 - proven permanent rejection -> `FAILED_PERMANENT`
@@ -126,6 +129,8 @@ Per Channel Profile declares:
 - concurrency/rate limits
 - circuit-breaker thresholds
 - capability flags validated against adapter declaration
+- callback ordering/version capability
+- failover-safety class and its evidence/contract-test requirement
 
 Default circuit breaker opens after a configured rolling failure threshold and probes with bounded half-open concurrency.
 
@@ -159,7 +164,7 @@ Bulkheads are per provider/channel/Tenant. Provider I/O is outside DB transactio
 
 ## Testing Strategy
 
-Provider contract tests cover stable idempotency, timeout before/after provider acceptance, non-idempotent ambiguous send, unknown parking, reconciliation proving present/absent, callback resolution, safe failover, Retry-After, circuit breaker, secret rotation before next attempt, and immutable attempt evidence.
+Provider contract tests cover stable idempotency, timeout before/after provider acceptance, non-idempotent ambiguous send, unknown parking, reconciliation proving present/absent, callback ordering/version semantics, contradictory callback resolution, safe failover classification, Retry-After, circuit breaker, secret rotation before next attempt, and immutable attempt evidence.
 
 ## Operational Notes
 
@@ -167,4 +172,4 @@ Operator UI clearly distinguishes `UNKNOWN`, `PROVIDER_ACCEPTED`, and `DELIVERED
 
 ## Traceability
 
-Implements SAD-005 Provider Adapters, Provider Capability/Suppression/Unknown-Outcome Policy, Retry & Reconciliation, and §4.10. Conforms to PAD-PLT-005 Unknown Provider Outcome and attempt-level late-binding policies.
+Implements SAD-005 v2.2 Provider Adapters, Provider Capability/Suppression/Unknown-Outcome Policy, Retry & Reconciliation, and Delivery Attempt lifecycle. Conforms to PAD-PLT-005 Unknown Provider Outcome and attempt-level late-binding policies.
