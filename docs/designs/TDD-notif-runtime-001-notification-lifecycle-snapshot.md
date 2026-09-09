@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-001
   title: Notification Lifecycle and Frozen Snapshot
   owner: Notification Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Notification Lifecycle and Frozen Snapshot
 
@@ -39,9 +39,9 @@ NotificationIngress
 
 Notification lifecycle states are `ACCEPTED`, `SCHEDULE_PENDING`, `SCHEDULED`, `ACTIVE`, and `COMPLETED`; cancellation is represented by an authoritative `cancelled_at` delivery gate rather than by rewriting already-started Delivery outcomes.
 
-Delivery states: `PLANNED`, `READY`, `ATTEMPTING`, `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, `UNKNOWN`, `SUPPRESSED`, `CANCELLED`.
+Delivery states: `PLANNED`, `READY`, `ATTEMPTING`, `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, `UNKNOWN`, `PARKED`, `SUPPRESSED`, `CANCELLED`.
 
-Terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `SUPPRESSED`, and `CANCELLED`. `UNKNOWN` is non-terminal but blocks blind retry/failover. Cancellation changes only not-started Deliveries to `CANCELLED`; an already-started Delivery retains its real external outcome and may later become `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, or remain `UNKNOWN`.
+Semantic terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `SUPPRESSED`, and `CANCELLED`. `PARKED` is terminal for automatic processing only: no worker may retry or fail over it, but a governed evidence-based operator/policy resolution may move it to a proven state or reopen it for a safe retry. `UNKNOWN` blocks blind retry/failover until reconciliation proves a safe transition. Cancellation changes only not-started Deliveries to `CANCELLED`; an already-started Delivery retains its real external outcome and may later become `PROVIDER_ACCEPTED`, `DELIVERED`, `FAILED_PERMANENT`, or remain `UNKNOWN`.
 
 ### Authoritative State Transition Contract
 
@@ -56,10 +56,37 @@ Terminal Delivery states are `DELIVERED`, `FAILED_PERMANENT`, `SUPPRESSED`, and 
 | `ATTEMPTING` | permanent no-delivery proven | `FAILED_PERMANENT` | matching attempt |
 | `PROVIDER_ACCEPTED` | final receipt | `DELIVERED` | monotonic evidence |
 | `UNKNOWN` | effect absent proven | `READY` | retry policy permits |
+| `UNKNOWN` | no safe automatic resolution | `PARKED` | evidence retained; operator/policy resolution required |
+| `PARKED` | governed effect-absence proof | `READY` | explicit resolution evidence; retry budget permits |
+| `PARKED` | governed provider evidence | proven normalized state | only evidence-supported `PROVIDER_ACCEPTED`, `DELIVERED`, or `FAILED_PERMANENT` |
 | any started state | Notification cancelled | unchanged | blocks future attempts only |
 | terminal | weaker/duplicate evidence | unchanged | monotonicity |
 
 No adapter, API, or UI owns a competing state machine.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PLANNED
+    PLANNED --> READY: activation
+    READY --> SUPPRESSED: suppression denies
+    READY --> CANCELLED: cancellation wins before start
+    READY --> ATTEMPTING: attempt-start commit
+    ATTEMPTING --> PROVIDER_ACCEPTED: acceptance proven
+    ATTEMPTING --> FAILED_PERMANENT: no-delivery proven
+    ATTEMPTING --> UNKNOWN: external effect ambiguous
+    PROVIDER_ACCEPTED --> DELIVERED: final receipt
+    PROVIDER_ACCEPTED --> FAILED_PERMANENT: authoritative negative receipt
+    PROVIDER_ACCEPTED --> UNKNOWN: status becomes ambiguous
+    UNKNOWN --> READY: effect absence proven and retry permitted
+    UNKNOWN --> PROVIDER_ACCEPTED: reconciliation proves acceptance
+    UNKNOWN --> DELIVERED: reconciliation proves delivery
+    UNKNOWN --> FAILED_PERMANENT: reconciliation proves terminal no-delivery
+    UNKNOWN --> PARKED: cannot safely resolve automatically
+    PARKED --> READY: governed resolution proves effect absent and retry safe
+    PARKED --> PROVIDER_ACCEPTED: governed evidence proves acceptance
+    PARKED --> DELIVERED: governed evidence proves delivery
+    PARKED --> FAILED_PERMANENT: governed evidence proves terminal no-delivery
+```
 
 ## Data Model
 
@@ -155,8 +182,8 @@ Tests cover duplicate acceptance, conflicting idempotency, immutable snapshot en
 
 ## Operational Notes
 
-Operators can distinguish accepted, scheduled, active, provider-accepted, delivered, failed, unknown, suppressed, and cancelled states. Historical snapshots and Delivery evidence are immutable.
+Operators can distinguish accepted, scheduled, active, provider-accepted, delivered, failed, unknown, parked, suppressed, and cancelled states. Parked resolution is privileged/evidenced and never equivalent to manually fabricating delivery success. Historical snapshots and Delivery evidence are immutable.
 
 ## Traceability
 
-Implements SAD-005 Notification Aggregate, Recipient Snapshot, Delivery Planning, suppression, and cancellation semantics; conforms to PAD-PLT-005 domain policies and STD-GLB-010 scheduled-communication rules. Persistence is TDD-002; provider attempts are TDD-004; Scheduling binding is TDD-005.
+Implements SAD-005 v2.2 Notification Aggregate, Recipient Snapshot, Delivery Planning, suppression, cancellation, and parked-ambiguity semantics; conforms to PAD-PLT-005 domain policies and STD-GLB-010 scheduled-communication rules. Persistence is TDD-002; provider attempts are TDD-004; Scheduling binding is TDD-005.

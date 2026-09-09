@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-005
   title: Notification and Scheduling Composition
   owner: Notification Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Notification and Scheduling Composition
 
@@ -55,6 +55,7 @@ CancellationWorker
 - `idempotency_key`
 - `schedule_id` nullable until recovered
 - `schedule_version` nullable until bound/recovered
+- `target_contract_id` and immutable `target_contract_version` used for registration
 - `last_attempt_at`, `next_attempt_at`, `attempt_count`
 - request semantic hash
 - reconciliation metadata
@@ -82,14 +83,14 @@ Idempotency key format is stable logical identity `notif-schedule:<notification_
 ## API / Interface
 
 Frozen registration sends a one-time Schedule request containing:
-- target registered Notification wake-up contract
+- registered `target_contract_id` and explicit `target_contract_version` for the Notification wake-up contract
 - original `scheduled_at`
 - bounded trigger `{notification_id, generation}`
 - stable `Idempotency-Key`
 
-Trigger acceptance consumes `com.scnehaux.scheduling.occurrence.due.v1`.
+Trigger acceptance consumes `com.scnehaux.scheduling.occurrence.due.v1` and verifies that the immutable target contract/version on the Occurrence matches the locally bound registration generation before Delivery activation.
 
-Deferred Notification Command target uses a separately registered contract and bounded immutable input sufficient for Notification creation. It cannot carry provider credentials or unbounded recipient/content datasets.
+Deferred Notification Command target uses a separately registered versioned Target Contract and bounded immutable input sufficient for Notification creation. It cannot carry provider credentials or unbounded recipient/content datasets.
 
 ## Algorithms / Logic
 
@@ -97,7 +98,7 @@ Registration:
 
 1. acceptance transaction stores frozen Notification + `PENDING` registration
 2. worker calls Scheduling create with stable key
-3. success persists `schedule_id`, returned `schedule_version`, and `BOUND`
+3. success persists `schedule_id`, returned `schedule_version`, the resolved target contract/version, and `BOUND`
 4. timeout/ambiguous response retries the same key
 5. equivalent retry receives the same Schedule
 6. if local binding persistence is lost after Scheduler success, the next retry/recovery returns the same Schedule and repairs the binding
@@ -164,7 +165,7 @@ Scheduling is never called inside the Notification acceptance transaction. Regis
 
 ## Testing Strategy
 
-Fault-injection tests kill processes between every registration step, verify same Schedule ID on retry, test conflicting generation protection, duplicate occurrence, cancelled late trigger, Scheduler outage, binding reconciliation, direct/RabbitMQ/Kafka trigger profiles, and deferred-command size/secret rejection.
+Fault-injection tests kill processes between every registration step, verify same Schedule ID on retry, test conflicting generation protection, target-contract version mismatch, target deprecation/rebind compatibility, duplicate occurrence, cancelled late trigger, Scheduler outage, binding reconciliation, direct/RabbitMQ/Kafka trigger profiles, and deferred-command size/secret rejection.
 
 ## Operational Notes
 
@@ -172,4 +173,4 @@ Operations surface `PENDING`/ambiguous bindings and reconciliation actions. Oper
 
 ## Traceability
 
-Implements SAD-005 Scheduling Registration/Binding/Reconciliation and Trigger Acceptance modules. Conforms to PAD-PLT-005 scheduled-notification policies and STD-GLB-010 §3.1 scheduled communication modes.
+Implements SAD-005 v2.2 Scheduling Registration/Binding/Reconciliation and Trigger Acceptance modules, including versioned Scheduling Target Contract binding. Conforms to PAD-PLT-005 scheduled-notification policies and STD-GLB-010 §3.1 scheduled communication modes.

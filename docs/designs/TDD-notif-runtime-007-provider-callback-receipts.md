@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-notif-runtime-007
   title: Provider Callback and Receipt Normalization
   owner: Notification Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-005
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-09-09
 ---
 # Provider Callback and Receipt Normalization
 
@@ -45,11 +45,14 @@ Callback inbox key is `(provider_binding_id, provider_event_key)`. Prefer provid
 Persist safe evidence:
 - provider event ID/fingerprint
 - provider message ID
-- received timestamp
+- provider event timestamp when supplied
+- provider sequence/version when supplied
+- local received timestamp
 - authenticated signature scheme/version
 - raw payload hash
 - normalized event type/status
-- apply outcome
+- apply outcome (`APPLIED`, `DUPLICATE`, `STALE`, `CONTRADICTORY`, `UNMATCHED`)
+- reconciliation-required flag/reason when evidence conflicts
 - correlation to Attempt/Delivery
 
 Raw payload retention is governed separately and defaults to minimal required evidence.
@@ -69,11 +72,13 @@ HTTP success is returned only after inbox dedup and any applicable Delivery muta
 3. derive provider event key
 4. insert/lock inbox dedup row
 5. resolve Attempt/Delivery by provider identifiers and binding
-6. normalize provider status
-7. apply monotonic transition policy
-8. write lifecycle outbox
-9. commit
-10. acknowledge provider
+6. normalize provider status plus provider event-time/sequence/version metadata
+7. compare provider ordering/version metadata where available
+8. apply only a legal monotonic normalized transition; duplicate/stale evidence is retained without regression
+9. mark contradictory/ambiguous evidence for reconciliation rather than last-write-wins
+10. write lifecycle outbox
+11. commit
+12. acknowledge provider
 
 Monotonic examples:
 - `PROVIDER_ACCEPTED -> DELIVERED` allowed
@@ -81,6 +86,8 @@ Monotonic examples:
 - `UNKNOWN -> FAILED_PERMANENT` allowed only when callback proves no delivery/terminal rejection
 - `DELIVERED -> PROVIDER_ACCEPTED` ignored as stale
 - duplicate callback is idempotent
+- conflicting callbacks do not use last-write-wins; they preserve both evidence records and enter provider-specific reconciliation
+- event arrival time alone never authorizes a backwards normalized transition
 
 ## Configuration
 
@@ -109,6 +116,9 @@ Metrics:
 - `notification_callback_duplicates_total`
 - `notification_callback_unmatched_total`
 - `notification_callback_state_advances_total{from,to}`
+- `notification_callback_stale_total{provider}`
+- `notification_callback_contradictory_total{provider}`
+- `notification_callback_reconciliation_required_total{provider}`
 
 Trace spans contain provider/binding and internal IDs but no raw body/signature.
 
@@ -118,7 +128,7 @@ Callback transaction is short and indexed by provider event/message ID. Heavy re
 
 ## Testing Strategy
 
-Provider contract tests cover valid/invalid signature, key rotation, replay, duplicate callback, out-of-order receipts, unknown correlation, `UNKNOWN` resolution, final-state non-regression, DB failure before ack, payload limits, and telemetry redaction.
+Provider contract tests cover valid/invalid signature, key rotation, replay, duplicate callback, provider sequence/version ordering, out-of-order receipts, contradictory receipts, unknown correlation, `UNKNOWN` resolution, final-state non-regression, DB failure before ack, payload limits, and telemetry redaction.
 
 ## Operational Notes
 
@@ -126,4 +136,4 @@ Unmatched/authenticated callbacks have bounded parking and reconciliation workfl
 
 ## Traceability
 
-Implements SAD-005 Callback/Receipt Normalization and Provider Callback flow. Complements provider outcome policy TDD-004 and lifecycle publication TDD-006.
+Implements SAD-005 v2.2 Callback/Receipt Normalization and provider ordering/contradiction reconciliation flow. Complements provider outcome policy TDD-004 and lifecycle publication TDD-006.
